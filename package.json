@@ -47,6 +47,10 @@
     "url": "https://github.com/SDKeyDev/sdkey-typescript/issues"
   },
   "homepage": "https://docs.sdkey.dev",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "devDependencies": {
     "@types/node": "^22.10.5",
     "tsup": "^8.3.5",
