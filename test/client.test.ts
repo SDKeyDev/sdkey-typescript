@@ -285,4 +285,108 @@ describe('SdkeyClient', () => {
       code: 'HELLO_SIGNATURE_INVALID',
     } satisfies Partial<SdkeyError>)
   })
+
+  it('register / login / upgrade call client auth endpoints', async () => {
+    const { publicKeyB64 } = await generateEd25519Pair()
+    const successBody = {
+      success: true,
+      sessionToken: 'tok',
+      expiresAt: '2026-01-01T00:00:00.000Z',
+      user: {
+        id: 'u1',
+        username: 'player1',
+        email: null,
+        applicationId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      },
+      license: {
+        id: 'l1',
+        status: 'active',
+        expiresAt: null,
+        subscriptionTier: 1,
+      },
+      session: { ip: '203.0.113.1', hwid: 'hwid-1' },
+    }
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const req = JSON.parse(String(init?.body)) as Record<string, string>
+      expect(req.appId).toBe('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+      expect(req.clientVersion).toBe('1.0.0')
+
+      if (url.endsWith('/api/v1/client/register')) {
+        expect(req.username).toBe('player1')
+        expect(req.password).toBe('password1')
+        expect(req.licenseKey).toBe('SDKY-KEY')
+        expect(req.hwid).toBe('hwid-1')
+        return new Response(JSON.stringify(successBody), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url.endsWith('/api/v1/client/login')) {
+        expect(req.password).toBe('password1')
+        expect(Object.prototype.hasOwnProperty.call(req, 'hwid')).toBe(false)
+        return new Response(JSON.stringify(successBody), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url.endsWith('/api/v1/client/upgrade')) {
+        expect(req.licenseKey).toBe('SDKY-NEW')
+        expect(Object.prototype.hasOwnProperty.call(req, 'password')).toBe(false)
+        return new Response(JSON.stringify(successBody), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response('not found', { status: 404 })
+    })
+
+    const client = new SdkeyClient(
+      baseClientOpts({ publicKeyB64, fetch: fetchMock as unknown as typeof fetch }),
+    )
+
+    const registered = await client.register({
+      username: 'player1',
+      password: 'password1',
+      licenseKey: 'SDKY-KEY',
+      hwid: 'hwid-1',
+    })
+    expect(registered.sessionToken).toBe('tok')
+    expect(registered.license?.subscriptionTier).toBe(1)
+
+    const loggedIn = await client.login({ username: 'player1', password: 'password1' })
+    expect(loggedIn.user.username).toBe('player1')
+
+    const upgraded = await client.upgrade({ username: 'player1', licenseKey: 'SDKY-NEW' })
+    expect(upgraded.success).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('surfaces server error and code on auth failure', async () => {
+    const { publicKeyB64 } = await generateEd25519Pair()
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'License tier must be higher than the current tier',
+          code: 'TIER_NOT_HIGHER',
+        }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      )
+    })
+
+    const client = new SdkeyClient(
+      baseClientOpts({ publicKeyB64, fetch: fetchMock as unknown as typeof fetch }),
+    )
+
+    await expect(
+      client.upgrade({ username: 'player1', licenseKey: 'SDKY-LOW' }),
+    ).rejects.toMatchObject({
+      name: 'SdkeyError',
+      code: 'AUTH_FAILED',
+      message: 'License tier must be higher than the current tier',
+      serverCode: 'TIER_NOT_HIGHER',
+    } satisfies Partial<SdkeyError>)
+  })
 })

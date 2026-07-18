@@ -5,12 +5,13 @@ export type SdkeyErrorCode =
   | 'RESPONSE_SIGNATURE_INVALID'
   | 'SESSION_MISMATCH'
   | 'CLOCK_SKEW'
+  | 'AUTH_FAILED'
   | 'NETWORK'
   | 'UNKNOWN'
 
 export class SdkeyError extends Error {
   readonly code: SdkeyErrorCode
-  /** Server `code` from plaintext init failure bodies, when present. */
+  /** Server `code` from plaintext init/auth failure bodies, when present. */
   readonly serverCode?: string
 
   constructor(code: SdkeyErrorCode, message: string, cause?: unknown, serverCode?: string) {

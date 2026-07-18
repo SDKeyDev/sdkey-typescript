@@ -33,3 +33,52 @@ export type ValidateResult = {
   subscriptionTier: number | null
   timestamp: number
 }
+
+export type ClientAuthUser = {
+  id: string
+  username: string
+  email: string | null
+  applicationId: string
+}
+
+export type ClientAuthLicense = {
+  id: string
+  status: string
+  expiresAt: string | null
+  subscriptionTier: number
+}
+
+export type ClientAuthSession = {
+  ip: string
+  hwid: string | null
+}
+
+/** Success shape for register / login / upgrade (plaintext JSON). */
+export type ClientAuthResult = {
+  success: true
+  sessionToken: string
+  expiresAt: string
+  user: ClientAuthUser
+  license: ClientAuthLicense | null
+  session: ClientAuthSession
+}
+
+export type RegisterParams = {
+  username: string
+  password: string
+  email?: string
+  licenseKey?: string
+  hwid?: string
+}
+
+export type LoginParams = {
+  username: string
+  password: string
+  hwid?: string
+}
+
+export type UpgradeParams = {
+  username: string
+  licenseKey: string
+  hwid?: string
+}

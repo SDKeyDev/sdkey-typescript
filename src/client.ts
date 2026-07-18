@@ -13,7 +13,15 @@ import {
   verifySignature,
 } from './crypto/seal.js'
 import { SdkeyError } from './errors.js'
-import type { SdkeyClientOptions, SessionState, ValidateResult } from './types.js'
+import type {
+  ClientAuthResult,
+  LoginParams,
+  RegisterParams,
+  SdkeyClientOptions,
+  SessionState,
+  UpgradeParams,
+  ValidateResult,
+} from './types.js'
 
 type SessionInitResponse = {
   success?: boolean
@@ -38,11 +46,18 @@ type ValidateEnvelope = {
   code?: string
 }
 
+type ClientAuthFailure = {
+  success?: boolean
+  error?: string
+  code?: string
+}
+
 /**
  * SDKey license client.
  *
  * Flow: `init()` (session handshake) → `validate(licenseKey, hwid?)` (sealed request).
  * `validate` calls `init` automatically when no session exists.
+ * Client auth (`register` / `login` / `upgrade`) uses plaintext JSON and does not need a crypto session.
  */
 export class SdkeyClient {
   private readonly opts: SdkeyClientOptions
@@ -234,5 +249,75 @@ export class SdkeyClient {
         typeof plaintext.subscriptionTier === 'number' ? plaintext.subscriptionTier : null,
       timestamp: plaintext.timestamp,
     }
+  }
+
+  /** `POST /api/v1/client/register` (plaintext JSON). */
+  async register(params: RegisterParams): Promise<ClientAuthResult> {
+    const body: Record<string, string> = {
+      appId: this.opts.appId,
+      username: params.username,
+      password: params.password,
+      clientVersion: this.opts.appVersion,
+    }
+    if (params.email !== undefined) body.email = params.email
+    if (params.licenseKey !== undefined) body.licenseKey = params.licenseKey
+    if (params.hwid !== undefined) body.hwid = params.hwid
+    return this.clientAuth('register', body)
+  }
+
+  /** `POST /api/v1/client/login` (plaintext JSON). */
+  async login(params: LoginParams): Promise<ClientAuthResult> {
+    const body: Record<string, string> = {
+      appId: this.opts.appId,
+      username: params.username,
+      password: params.password,
+      clientVersion: this.opts.appVersion,
+    }
+    if (params.hwid !== undefined) body.hwid = params.hwid
+    return this.clientAuth('login', body)
+  }
+
+  /**
+   * `POST /api/v1/client/upgrade` (plaintext JSON).
+   * Username + license key only — no password.
+   */
+  async upgrade(params: UpgradeParams): Promise<ClientAuthResult> {
+    const body: Record<string, string> = {
+      appId: this.opts.appId,
+      username: params.username,
+      licenseKey: params.licenseKey,
+      clientVersion: this.opts.appVersion,
+    }
+    if (params.hwid !== undefined) body.hwid = params.hwid
+    return this.clientAuth('upgrade', body)
+  }
+
+  private async clientAuth(
+    action: 'register' | 'login' | 'upgrade',
+    body: Record<string, string>,
+  ): Promise<ClientAuthResult> {
+    let res: Response
+    try {
+      res = await this.fetchImpl(`${this.opts.apiBaseUrl}/api/v1/client/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    } catch (cause) {
+      throw new SdkeyError('NETWORK', `${action} request failed`, cause)
+    }
+
+    const json = (await res.json()) as ClientAuthResult | ClientAuthFailure
+    if (!res.ok || !json.success) {
+      const fail = json as ClientAuthFailure
+      throw new SdkeyError(
+        'AUTH_FAILED',
+        fail.error ?? `${action} failed`,
+        undefined,
+        fail.code,
+      )
+    }
+
+    return json as ClientAuthResult
   }
 }

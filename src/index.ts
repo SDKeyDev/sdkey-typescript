@@ -1,6 +1,17 @@
 export { SdkeyClient } from './client.js'
 export { SdkeyError, type SdkeyErrorCode } from './errors.js'
-export type { SdkeyClientOptions, SessionState, ValidateResult } from './types.js'
+export type {
+  ClientAuthLicense,
+  ClientAuthResult,
+  ClientAuthSession,
+  ClientAuthUser,
+  LoginParams,
+  RegisterParams,
+  SdkeyClientOptions,
+  SessionState,
+  UpgradeParams,
+  ValidateResult,
+} from './types.js'
 export {
   PROTOCOL_VERSION,
   CLOCK_SKEW_SECONDS,
