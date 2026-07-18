@@ -10,10 +10,15 @@ export type SdkeyErrorCode =
 
 export class SdkeyError extends Error {
   readonly code: SdkeyErrorCode
+  /** Server `code` from plaintext init failure bodies, when present. */
+  readonly serverCode?: string
 
-  constructor(code: SdkeyErrorCode, message: string, cause?: unknown) {
+  constructor(code: SdkeyErrorCode, message: string, cause?: unknown, serverCode?: string) {
     super(message, cause !== undefined ? { cause } : undefined)
     this.name = 'SdkeyError'
     this.code = code
+    if (serverCode !== undefined) {
+      this.serverCode = serverCode
+    }
   }
 }

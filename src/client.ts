@@ -17,13 +17,14 @@ import type { SdkeyClientOptions, SessionState, ValidateResult } from './types.j
 
 type SessionInitResponse = {
   success?: boolean
-  sessionId: string
-  serverNonceB64: string
-  hkdfSaltB64: string
-  timestamp: number
-  signatureB64: string
-  v: number
+  sessionId?: string
+  serverNonceB64?: string
+  hkdfSaltB64?: string
+  timestamp?: number
+  signatureB64?: string
+  v?: number
   error?: string
+  code?: string
 }
 
 type ValidateEnvelope = {
@@ -40,7 +41,7 @@ type ValidateEnvelope = {
 /**
  * SDKey license client.
  *
- * Flow: `init()` (session handshake) → `validate(licenseKey, hwid)` (sealed request).
+ * Flow: `init()` (session handshake) → `validate(licenseKey, hwid?)` (sealed request).
  * `validate` calls `init` automatically when no session exists.
  */
 export class SdkeyClient {
@@ -50,6 +51,9 @@ export class SdkeyClient {
   private session: SessionState | null = null
 
   constructor(opts: SdkeyClientOptions) {
+    if (!opts.appVersion) {
+      throw new SdkeyError('UNKNOWN', 'appVersion is required')
+    }
     this.opts = {
       ...opts,
       apiBaseUrl: opts.apiBaseUrl.replace(/\/+$/, ''),
@@ -57,12 +61,12 @@ export class SdkeyClient {
     this.fetchImpl = opts.fetch ?? globalThis.fetch.bind(globalThis)
   }
 
-  /** Active session, if any. */
+  /** Active crypto session, if any. */
   getSession(): SessionState | null {
     return this.session
   }
 
-  /** Drop the current session (next `validate` will re-init). */
+  /** Drop the current crypto session (next `validate` will re-init). */
   clearSession(): void {
     this.session = null
   }
@@ -79,6 +83,7 @@ export class SdkeyClient {
         body: JSON.stringify({
           appId: this.opts.appId,
           clientNonceB64: bytesToBase64(clientNonce),
+          clientVersion: this.opts.appVersion,
         }),
       })
     } catch (cause) {
@@ -87,7 +92,22 @@ export class SdkeyClient {
 
     const body = (await res.json()) as SessionInitResponse
     if (!res.ok || !body.success) {
-      throw new SdkeyError('INIT_FAILED', body.error ?? 'session init failed')
+      throw new SdkeyError(
+        'INIT_FAILED',
+        body.error ?? 'session init failed',
+        undefined,
+        body.code,
+      )
+    }
+
+    if (
+      !body.sessionId ||
+      !body.serverNonceB64 ||
+      !body.hkdfSaltB64 ||
+      body.timestamp === undefined ||
+      !body.signatureB64
+    ) {
+      throw new SdkeyError('INIT_FAILED', 'session init response incomplete')
     }
 
     const hello = {
@@ -120,20 +140,32 @@ export class SdkeyClient {
     return this.session
   }
 
-  async validate(licenseKey: string, hwid: string): Promise<ValidateResult> {
+  /**
+   * Sealed license validate. Omit `hwid` for web clients (JSON key is not sent).
+   */
+  async validate(licenseKey: string, hwid?: string): Promise<ValidateResult> {
     if (!this.session || !this.publicKey) {
       await this.init()
     }
     const session = this.session!
     const publicKey = this.publicKey!
 
-    const inner = {
-      hwid,
+    const inner: {
+      hwid?: string
+      licenseKey: string
+      nonce: string
+      timestamp: number
+      v: number
+    } = {
       licenseKey,
       nonce: bytesToBase64(crypto.getRandomValues(new Uint8Array(VALIDATE_NONCE_BYTES))),
       timestamp: Math.floor(Date.now() / 1000),
       v: PROTOCOL_VERSION,
     }
+    if (hwid !== undefined) {
+      inner.hwid = hwid
+    }
+
     const sealed = await sealAesGcm(session.aesKey, new TextEncoder().encode(JSON.stringify(inner)))
 
     let res: Response
@@ -159,6 +191,8 @@ export class SdkeyClient {
       throw new SdkeyError(
         'VALIDATE_RESPONSE_INVALID',
         envelope.error ?? 'invalid validate response',
+        undefined,
+        envelope.code,
       )
     }
 
@@ -170,8 +204,10 @@ export class SdkeyClient {
     const plaintext = JSON.parse(new TextDecoder().decode(plainBytes)) as ValidateResult & {
       sessionId: string
       v: number
+      subscriptionTier?: number
     }
 
+    // Mandatory order: decrypt → verify → skew/session → then trust success.
     const verified = await verifySignature(publicKey, plaintext, envelope.signatureB64)
     if (!verified) {
       throw new SdkeyError('RESPONSE_SIGNATURE_INVALID', 'response signature verification failed')
@@ -194,6 +230,8 @@ export class SdkeyClient {
       message: plaintext.message,
       status: plaintext.status ?? null,
       expiresAt: plaintext.expiresAt ?? null,
+      subscriptionTier:
+        typeof plaintext.subscriptionTier === 'number' ? plaintext.subscriptionTier : null,
       timestamp: plaintext.timestamp,
     }
   }

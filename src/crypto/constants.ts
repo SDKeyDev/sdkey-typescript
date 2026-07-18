@@ -27,6 +27,9 @@ export const VALIDATE_FAILURE_CODES = [
   'HWID_MISMATCH',
   'DECRYPT_FAIL',
   'APP_DISABLED',
+  'APP_OUTDATED',
+  'HWID_BANNED',
+  'IP_BANNED',
 ] as const
 
 export type ValidateFailureCode = (typeof VALIDATE_FAILURE_CODES)[number]
