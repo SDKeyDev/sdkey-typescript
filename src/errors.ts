@@ -7,6 +7,7 @@ export type SdkeyErrorCode =
   | 'CLOCK_SKEW'
   | 'AUTH_FAILED'
   | 'NETWORK'
+  | 'HWID_UNAVAILABLE'
   | 'UNKNOWN'
 
 export class SdkeyError extends Error {

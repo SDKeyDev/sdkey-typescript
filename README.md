@@ -46,6 +46,22 @@ try {
 }
 ```
 
+### Hardware ID (Node desktop)
+
+`getHardwareId()` reads a stable OS machine identifier, SHA-256 hashes it, and returns lowercase hex (64 chars). It is **opt-in** — pass the result only when you want HWID binding. Omit `hwid` for browsers / web.
+
+```ts
+import { SdkeyClient, getHardwareId } from '@sdkey/sdk'
+
+// Desktop (Node):
+await client.validate(key, getHardwareId())
+
+// Web: omit hwid
+await client.validate(key)
+```
+
+Sources: Windows `MachineGuid`, Linux `/etc/machine-id` (fallback `/var/lib/dbus/machine-id`), macOS `IOPlatformUUID`. Throws `SdkeyError` with `code: 'HWID_UNAVAILABLE'` on unsupported platforms, missing IDs, or non-Node runtimes.
+
 `validate` calls `init()` automatically when no session exists. Sessions last ~15 minutes server-side; on `SESSION_EXPIRED` the client clears local state so the next call re-handshakes.
 
 ### Client auth (plaintext JSON)
@@ -144,11 +160,15 @@ Per-app `responseMessages` override defaults. Clients receive those strings; the
 - `upgrade({ username, licenseKey, hwid? })` — plaintext tier upgrade (**no password**)
 - `getSession()` / `clearSession()` — inspect or drop the local crypto session
 
+### Helpers
+
+- `getHardwareId()` — Node-only stable HWID (SHA-256 hex of OS machine id); throw `HWID_UNAVAILABLE` in browsers / when unavailable
+
 ### Errors
 
 Protocol / transport failures throw `SdkeyError` with a `code`:
 
-`INIT_FAILED` · `HELLO_SIGNATURE_INVALID` · `VALIDATE_RESPONSE_INVALID` · `RESPONSE_SIGNATURE_INVALID` · `SESSION_MISMATCH` · `CLOCK_SKEW` · `AUTH_FAILED` · `NETWORK`
+`INIT_FAILED` · `HELLO_SIGNATURE_INVALID` · `VALIDATE_RESPONSE_INVALID` · `RESPONSE_SIGNATURE_INVALID` · `SESSION_MISMATCH` · `CLOCK_SKEW` · `AUTH_FAILED` · `NETWORK` · `HWID_UNAVAILABLE`
 
 When the server returns a plaintext failure body, `err.message` is the server `error` string and `err.serverCode` is the server `code` (for example `APP_OUTDATED`, `TIER_NOT_HIGHER`).
 

@@ -1,5 +1,6 @@
 export { SdkeyClient } from './client.js'
 export { SdkeyError, type SdkeyErrorCode } from './errors.js'
+export { getHardwareId } from './hwid.js'
 export type {
   ClientAuthLicense,
   ClientAuthResult,
